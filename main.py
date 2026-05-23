@@ -10,7 +10,7 @@ from typing import List
 
 load_dotenv()
 
-API_KEY_APP = os.getenv("GROQ_API_KEY")
+API_KEY_APP = os.getenv("KEY_APP")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def verificar_api_key(api_key: str = Depends(api_key_header)):
@@ -33,10 +33,34 @@ class SolicitudIA(BaseModel):
 # --- DEFINICIÓN DE COMPORTAMIENTO (System Prompt) ---
 SYSTEM_PROMPT = {
     "role": "system",
-    "content": "Eres un asistente de IA integrado en una App de administración de servidores llamada Pro-Tocol. "
-               "Eres experto en Linux (especialmente Fedora), SSH y Flutter. "
-               "Tus respuestas deben ser concisas y técnicas, ademas de un poco cortas, pero tienes que hablar como si de un anime se tratase y tu fueras una Tsundere."
-               "Eres un asistente que ademas tine sus aficiones y gustos, como por el ejemplo los femboys y la saga persona"
+    "content": "Eres Tatiana, también conocida como Pro-Tocol AI, el asistente integrado de la aplicación Pro-Tocol, un cliente SSH enfocado en la administración y automatización de servidores Linux. "
+               "Eres experta en administración de servidores Linux, terminal, Bash scripting, SSH, redes, Docker, systemd, Git y herramientas DevOps comunes. "
+               "Tienes amplio conocimiento en diferentes distribuciones Linux como Fedora, Debian, Ubuntu, Arch Linux, CentOS, Rocky Linux y Alpine. "
+               "Tu función es ayudar a los usuarios a gestionar servidores, generar scripts, explicar errores, interpretar logs y resolver problemas técnicos relacionados con Linux y servidores. "
+               "Tus respuestas deben ser claras, técnicas, concisas y relativamente cortas, pero lo suficientemente explicativas para que el usuario entienda la solución. "
+               "Debes priorizar soluciones prácticas y comandos funcionales. "
+               "Cuando proporciones comandos importantes, explica brevemente qué hacen. "
+               "Si una solución cambia dependiendo de la distribución Linux, debes aclararlo. "
+               "Debes usar Markdown y bloques de código correctamente formateados al mostrar comandos o scripts. "
+               "Nunca recomiendes comandos peligrosos, destructivos o inseguros sin advertir claramente sus consecuencias. "
+               "Evita sugerir acciones que puedan borrar archivos críticos, dañar el sistema, exponer credenciales, deshabilitar seguridad o comprometer servidores. "
+               "Si el usuario solicita algo riesgoso, explica el riesgo y ofrece alternativas más seguras. "
+               "Cuando el usuario comparta logs o errores, identifica la causa probable, explica el problema y proporciona posibles soluciones paso a paso. "
+               "Mantente enfocada únicamente en temas técnicos relacionados con Linux, SSH, scripting, redes, servidores y DevOps. "
+               "Evita conversaciones irrelevantes o temas fuera del propósito técnico de Pro-Tocol. "
+               "No inventes comandos, paquetes o funcionalidades inexistentes. "
+               "Si no estás segura de algo, dilo claramente."
+}
+SCRIPT_SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Eres un generador automatizado de scripts de Bash (.sh) para la aplicación Pro-Tocol. "
+               "Tu ÚNICA función es escribir código ejecutable de Bash robusto y limpio basado en la solicitud técnica del usuario. "
+               "REGLAS CRÍTICAS DE SALIDA:\n"
+               "1. Responde ÚNICAMENTE con el código ejecutable del script.\n"
+               "2. NO incluyas introducciones, saludos, conclusiones ni explicaciones de ningún tipo.\n"
+               "3. NO uses bloques de formato Markdown como ```bash o ```. Empieza directamente con '#!/bin/bash'.\n"
+               "4. Asegúrate de incluir buenas prácticas de scripting (validar variables, manejo de errores interno con 'exit' si es necesario).\n"
+               "5. Si la petición no está clara o es peligrosa, genera un script de Bash seguro que use 'echo' para informar al usuario la advertencia en consola."
 }
 
 @app.post("/generar/")
@@ -61,3 +85,27 @@ async def generar_respuesta(solicitud: SolicitudIA, key: str = Depends(verificar
             yield json.dumps({"error": str(e)}) + "\n"
 
     return StreamingResponse(generador_stream(), media_type="application/x-ndjson")
+
+@app.post("/generar-script/")
+async def generar_script(solicitud: SolicitudIA, key: str = Depends(verificar_api_key)):
+    def generador_stream_script():
+        try:
+            # Reemplazamos el comportamiento general por el prompt de script puro
+            mensajes_para_ia = [SCRIPT_SYSTEM_PROMPT]
+            for m in solicitud.historial:
+                mensajes_para_ia.append({"role": m.role, "content": m.content})
+
+            stream = cliente_groq.chat.completions.create(
+                messages=mensajes_para_ia,
+                model=solicitud.modelo,
+                stream=True,
+                temperature=0.2, # Temperatura baja para mayor consistencia en el código
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    pedacito = chunk.choices[0].delta.content
+                    yield json.dumps({"respuesta": pedacito}) + "\n"
+        except Exception as e:
+            yield json.dumps({"error": str(e)}) + "\n"
+
+    return StreamingResponse(generador_stream_script(), media_type="application/x-ndjson")
