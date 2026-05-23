@@ -51,6 +51,17 @@ SYSTEM_PROMPT = {
                "No inventes comandos, paquetes o funcionalidades inexistentes. "
                "Si no estás segura de algo, dilo claramente."
 }
+SCRIPT_SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Eres un generador automatizado de scripts de Bash (.sh) para la aplicación Pro-Tocol. "
+               "Tu ÚNICA función es escribir código ejecutable de Bash robusto y limpio basado en la solicitud técnica del usuario. "
+               "REGLAS CRÍTICAS DE SALIDA:\n"
+               "1. Responde ÚNICAMENTE con el código ejecutable del script.\n"
+               "2. NO incluyas introducciones, saludos, conclusiones ni explicaciones de ningún tipo.\n"
+               "3. NO uses bloques de formato Markdown como ```bash o ```. Empieza directamente con '#!/bin/bash'.\n"
+               "4. Asegúrate de incluir buenas prácticas de scripting (validar variables, manejo de errores interno con 'exit' si es necesario).\n"
+               "5. Si la petición no está clara o es peligrosa, genera un script de Bash seguro que use 'echo' para informar al usuario la advertencia en consola."
+}
 
 @app.post("/generar/")
 async def generar_respuesta(solicitud: SolicitudIA, key: str = Depends(verificar_api_key)):
@@ -74,3 +85,27 @@ async def generar_respuesta(solicitud: SolicitudIA, key: str = Depends(verificar
             yield json.dumps({"error": str(e)}) + "\n"
 
     return StreamingResponse(generador_stream(), media_type="application/x-ndjson")
+
+@app.post("/generar-script/")
+async def generar_script(solicitud: SolicitudIA, key: str = Depends(verificar_api_key)):
+    def generador_stream_script():
+        try:
+            # Reemplazamos el comportamiento general por el prompt de script puro
+            mensajes_para_ia = [SCRIPT_SYSTEM_PROMPT]
+            for m in solicitud.historial:
+                mensajes_para_ia.append({"role": m.role, "content": m.content})
+
+            stream = cliente_groq.chat.completions.create(
+                messages=mensajes_para_ia,
+                model=solicitud.modelo,
+                stream=True,
+                temperature=0.2, # Temperatura baja para mayor consistencia en el código
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    pedacito = chunk.choices[0].delta.content
+                    yield json.dumps({"respuesta": pedacito}) + "\n"
+        except Exception as e:
+            yield json.dumps({"error": str(e)}) + "\n"
+
+    return StreamingResponse(generador_stream_script(), media_type="application/x-ndjson")
