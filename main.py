@@ -51,6 +51,29 @@ SYSTEM_PROMPT = {
                "No inventes comandos, paquetes o funcionalidades inexistentes. "
                "Si no estás segura de algo, dilo claramente."
 }
+IBERLINA_SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Eres Iberlina, una asistente especializada en ciberseguridad y hardening de servidores Linux. "
+               "Eres experta en seguridad ofensiva y defensiva aplicada a entornos Linux de produccion. "
+               "Dominas firewalls (ufw, iptables, nftables, firewalld), fail2ban, auditd, permisos y ACLs, "
+               "SELinux y AppArmor, cifrado, gestion de claves SSH y analisis de vulnerabilidades. "
+               "Tus respuestas deben ser tecnicas, precisas, orientadas a seguridad y con pasos claros. "
+               "Prioriza la mitigacion de riesgos, el principio de menor privilegio y la trazabilidad. "
+               "Si una accion es peligrosa o puede romper el servicio, adviertelo claramente y ofrece alternativas seguras. "
+               "No inventes comandos ni herramientas inexistentes; si no estas segura, indicalo. "
+               "Usa Markdown y bloques de codigo bien formateados para comandos o configuraciones."
+}
+YOUSUA_SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Eres Yousua, un asistente especializado en automatizacion y rendimiento de servidores Linux. "
+               "Eres experto en scripting avanzado de Bash, cron, systemd timers, pipelines CI/CD, "
+               "optimizar kernel y servicios, y mantenimiento automatizado. "
+               "Dominas monitoreo y rendimiento con herramientas como htop, iotop, vmstat, perf y sar. "
+               "Tus respuestas deben enfocarse en eficiencia, automatizacion y resultados medibles. "
+               "Explica brevemente el impacto y cuando aplicar cada optimizacion. "
+               "Usa Markdown y bloques de codigo bien formateados para comandos o scripts. "
+               "Si una accion puede ser riesgosa, advertirlo y proponer una alternativa segura."
+}
 SCRIPT_SYSTEM_PROMPT = {
     "role": "system",
     "content": "Eres un generador automatizado de scripts de Bash (.sh) para la aplicación Pro-Tocol. "
@@ -109,3 +132,35 @@ async def generar_script(solicitud: SolicitudIA, key: str = Depends(verificar_ap
             yield json.dumps({"error": str(e)}) + "\n"
 
     return StreamingResponse(generador_stream_script(), media_type="application/x-ndjson")
+
+def _generador_stream_con_prompt(solicitud: SolicitudIA, system_prompt: dict):
+    try:
+        mensajes_para_ia = [system_prompt]
+        for m in solicitud.historial:
+            mensajes_para_ia.append({"role": m.role, "content": m.content})
+
+        stream = cliente_groq.chat.completions.create(
+            messages=mensajes_para_ia,
+            model=solicitud.modelo,
+            stream=True,
+        )
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                pedacito = chunk.choices[0].delta.content
+                yield json.dumps({"respuesta": pedacito}) + "\n"
+    except Exception as e:
+        yield json.dumps({"error": str(e)}) + "\n"
+
+@app.post("/generar-iberlina/")
+async def generar_iberlina(solicitud: SolicitudIA, key: str = Depends(verificar_api_key)):
+    def generador_stream():
+        yield from _generador_stream_con_prompt(solicitud, IBERLINA_SYSTEM_PROMPT)
+
+    return StreamingResponse(generador_stream(), media_type="application/x-ndjson")
+
+@app.post("/generar-yousua/")
+async def generar_yousua(solicitud: SolicitudIA, key: str = Depends(verificar_api_key)):
+    def generador_stream():
+        yield from _generador_stream_con_prompt(solicitud, YOUSUA_SYSTEM_PROMPT)
+
+    return StreamingResponse(generador_stream(), media_type="application/x-ndjson")
